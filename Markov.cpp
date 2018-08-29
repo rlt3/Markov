@@ -3,9 +3,13 @@
 #include <utility>
 #include <string>
 #include <random>
+#include <algorithm>
+#include <functional>
 #include <fstream>
 #include <sstream>
 #include <map>
+
+#define STOP_CHAR '\n'
 
 /*
  * Several problems with the parser:
@@ -25,38 +29,43 @@
 class Parser {
 public:
     Parser (std::stringstream &stream)
-        : stop_encountered(false)
-        , stream(stream)
+        : stream(stream)
     {
-        stop_chars['\n'] = 1;
     }
 
     std::string
     next ()
     {
         std::string buff;
-        stop_encountered = false;
         char next;
 
-        /* Skip any preceding whitespace and stop characters */
-        while (!done() && (stream.peek() == ' ' || 
-                           stop_chars.find(stream.peek()) != stop_chars.end())) {
+        /* Skip any preceding whitespace */
+        while (!done() && stream.peek() == ' ')
             stream.get();
+
+        /* 
+         * If we've ran into the stop character, skip all of them and return
+         * the stop character as a string.
+         */
+        if (!done() && stream.peek() == STOP_CHAR) {
+            while (!done() && stream.peek() == STOP_CHAR)
+                stream.get();
+            return std::string(1, STOP_CHAR);
         }
 
         while (!done()) {
-            next = stream.get();
+            next = stream.peek();
 
             /* stop after hitting any whitespace */
             if (next == ' ')
                 break;
 
-            if (stop_chars.find(next) != stop_chars.end()) {
-                stop_encountered = true;
+            /* stop after hitting the stop character */
+            if (next == STOP_CHAR)
                 break;
-            }
 
-            buff += next;
+            /* finally eat the character on the stream */
+            buff += stream.get();
         }
 
         return buff;
@@ -68,15 +77,7 @@ public:
         return (stream.rdbuf()->in_avail() == 0);
     }
 
-    bool
-    stop ()
-    {
-        return stop_encountered;
-    }
-
 protected:
-    bool stop_encountered;
-    std::map<char, int> stop_chars;
     std::stringstream &stream;
 };
 
@@ -84,11 +85,13 @@ class Word {
 public:
     Word ()
         : word_string(std::string())
+        , num_transitions(0)
         , delta(std::discrete_distribution<int>())
     { }
 
     Word (std::string word)
         : word_string(word)
+        , num_transitions(0)
         , delta(std::discrete_distribution<int>())
     { }
 
@@ -115,10 +118,31 @@ public:
         /* The index of the `delta_lookup` corresponds to the index in `p'. */
         for (auto &pair : transitions) {
             delta_lookup.push_back(pair.first);
-            p.push_back(pair.second / num_transitions);
+            p.push_back((double) pair.second / (double) num_transitions);
         }
 
         delta = std::discrete_distribution<int>(p.begin(), p.end());
+    }
+
+    void
+    inspect ()
+    {
+        int transition_count = 0;
+        double prob_count = 0.0;
+
+        printf("\"%s\"\n", word_string.c_str());
+        for (auto &pair : transitions) {
+            printf("\t -> %s probability (%d / %d): %lg\n",
+                    pair.first.c_str(),
+                    pair.second,
+                    num_transitions,
+                    (double) pair.second / (double) num_transitions);
+            transition_count += pair.second;
+            prob_count += (double) pair.second / (double) num_transitions;
+        }
+
+        printf("\t total transitions: %d / %d => %lg\n",
+                transition_count, num_transitions, prob_count);
     }
 
     std::string
@@ -168,11 +192,20 @@ protected:
 class Corpus {
 public:
     Corpus ()
-        : generator((std::random_device())())
-        , start_word(Word("-->"))
-        , not_built(true)
+        : not_built(true)
         , current_word(std::string())
-    { }
+    {
+        /*
+         * A ridiculous incantation which basically just gets 1024 random bytes
+         * from the random_device and uses them as a seed for the random number
+         * generator.
+         */
+        std::mt19937::result_type data[1024];
+        std::random_device source;
+        std::generate(std::begin(data), std::end(data), std::ref(source));
+        std::seed_seq seeds(std::begin(data), std::end(data));
+        generator = std::mt19937(seeds);
+    }
 
     int
     num_words ()
@@ -198,59 +231,60 @@ public:
     build (std::stringstream &stream)
     {
         std::string curr, next;
+        std::string stop_string;
         Parser p(stream);
 
         /*
-         * While there are words, get the current word and the next word. 
-         * `next' is entered as a transition of `curr'.
+         * `p.next` can return a string that contains STOP_CHAR which is
+         * a delimiter we use to represent the `end' of a Markov chain.
+         *
+         * Since the string "STOP_CHAR" will not be read in under normal
+         * conditions, it can be used as the key for the dictionary for the
+         * start word. For the first run of the loop, we must manually set
+         * it.
          */
-        curr = p.next();
-        while (1) {
+        stop_string = std::string(1, STOP_CHAR);
+        curr = stop_string;
+        while (!p.done()) {
+            /*
+             * If p.next produces "STOP_CHAR" here, it is not an issue. Since
+             * "STOP_CHAR" is the key for the starting transition, that means
+             * as the Markov Chains inevitably end their transition, they will
+             * produce the "STOP_CHAR" string. This means the chain can be
+             * restarted because that key is for the starting transition table.
+             */
             next = p.next();
 
-            if (p.done())
-                break;
-
-            //printf("%s -> %s\n", curr.c_str(), next.c_str());
-            dictionary[curr].update_transition(next);
-
-            /* 
-             * if we encountered a stop word, then start transition over and
-             * get a completely new `curr'. That word will be added as a start
-             * word.
+            /*
+             * Need to make sure parser didn't run out of characters for next
+             * read. If it did, then there is nothing to transition to, but we
+             * will give it the stop string to complete the cycle. The statement
+             * will be test next iteration.
              */
-            if (p.stop()) {
-                curr = p.next();
-                start_word.update_transition(curr);
-            }
-            /* else the next word becomes the current transition word */
-            else {
-                curr = next;
-            }
+            if (p.done())
+                next = stop_string;
+
+            //printf("->'%s' -> '%s'\n", curr.c_str(), next.c_str());
+            add_pair(curr, next);
+            
+            /* 
+             * Set the next transition as the current transition to keep the
+             * chain.
+             */
+            curr = next;
         }
 
-        /*
-         * TODO: Build an actual parser for words. Should be easy enough but
-         * need support for 'stop sequences', e.g. "\n", ".", etc, that are 
-         * often "baked into" the word. Any whitespace that isn't a stop word
-         * just carries the sentence onwards.
+        /* 
+         * Build cache of transition tables for each word. Note that the start
+         * word is transparently handled here because its key is returned from
+         * the Parser as "STOP_CHAR".
          */
-
-        /*
-         * TODO: Need starting words and ending words. So, that means some sort
-         * of small parser with appropriate methods to set the list of words we
-         * look for to end a sentence and to start new 'start words'.
-         * Each 'start word' has some probability of being used just like any
-         * regular word transition. It can be apart of the corpus and called
-         * the `start_word' and we can use the transition tables like normal.
-         */
-
-        /* Build cache of transition tables for each word. */
-        start_word.cache();
         for (auto &pair : dictionary)
             pair.second.cache();
 
-        current_word = start_word.next(generator);
+        current_word = dictionary[stop_string].next(generator);
+        printf("Produced %s as first\n", current_word.c_str());
+        dictionary[stop_string].inspect();
         not_built = false;
     }
 
@@ -278,11 +312,11 @@ protected:
      * in the pair as a transition from the current state.
      */
     void
-    add_pair (const std::pair<std::string, std::string> pair)
+    add_pair (std::string curr, std::string next)
     {
-        if (dictionary.find(pair.first) == dictionary.end())
-            dictionary.emplace(pair.first, Word(pair.first));
-        dictionary[pair.first].update_transition(pair.second);
+        if (dictionary.find(curr) == dictionary.end())
+            dictionary.emplace(curr, Word(curr));
+        dictionary[curr].update_transition(next);
     }
 
     void
@@ -296,7 +330,6 @@ protected:
 
     std::mt19937 generator;
     bool not_built;
-    Word start_word;
     std::string current_word; /* used as a key into dictionary */
     std::unordered_map<std::string, Word> dictionary;
 };
