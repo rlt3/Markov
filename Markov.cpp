@@ -8,19 +8,20 @@
 #include <map>
 
 /*
- * Several problems with the parser:
- *  - how to handle context specific 'stop_chars'? For example, in a quotation
- *  how to we handle a period showing up? How to handle 'Mrs. Long'?
+ * Parse should (at some point) accept a list of stop characters. Right now we
+ * can just use '\n' as a stop character. The flow should be: next returns the
+ * next `chunk'. `next` should skip all whitespace it finds. if the first
+ * character read after skipping any whitespace is a skip character, then read
+ * it and skip all other skip characters there-after. If there are no skip
+ * characters read after skipping whitespace then read each character until it
+ * runs into either a skip character or whitespace.
  *
- * The easiest way to handle this is to set only the stop character for \n and
- * let the 'word' be anything including punction. E.g. a word can be 'and',
- * 'Mrs.', 'Long', 'here,' and 'immediately;'.
- *
- * This means the Markov Chain will take the form of the text it's given in a
- * literal sense (the actually look of the text) and in the sense of word
- * choice and placement inside a sentence.
- *
- *  Any more advanced and we must get into NLP/full-blown parser.
+ * The Corpus itself should determine what to do when it encounters a stop
+ * character string. The logic of reading a corpus shouldn't be in the Parser.
+ * The Parser just returns chunks of whitespace delimited words or words 
+ * delimited by some stop character. This will alow us to more easily extend
+ * reading in punctuation into the corpus while keeping `start->stop' sentences
+ * clearly defined.
  */
 class Parser {
 public:
