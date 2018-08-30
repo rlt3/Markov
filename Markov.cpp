@@ -283,9 +283,6 @@ public:
         for (auto &pair : dictionary)
             pair.second.cache();
 
-        current_word = dictionary[stop_string].next(generator);
-        printf("Produced %s as first\n", current_word.c_str());
-        dictionary[stop_string].inspect();
         not_built = false;
     }
 
@@ -302,8 +299,15 @@ public:
     std::string
     next ()
     {
+        std::string key;
         check_build();
-        current_word = dictionary[current_word].next(generator);
+
+        key = current_word;
+        if (key.empty()) {
+            key = std::string(1, STOP_CHAR);
+        }
+
+        current_word = dictionary[key].next(generator);
         return current_word;
     }
 
