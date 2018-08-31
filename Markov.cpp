@@ -12,20 +12,19 @@
 #define STOP_CHAR '\n'
 
 /*
- * Parse should (at some point) accept a list of stop characters. Right now we
- * can just use '\n' as a stop character. The flow should be: next returns the
- * next `chunk'. `next` should skip all whitespace it finds. if the first
- * character read after skipping any whitespace is a skip character, then read
- * it and skip all other skip characters there-after. If there are no skip
- * characters read after skipping whitespace then read each character until it
- * runs into either a skip character or whitespace.
+ * Several problems with the parser:
+ *  - how to handle context specific 'stop_chars'? For example, in a quotation
+ *  how to we handle a period showing up? How to handle 'Mrs. Long'?
  *
- * The Corpus itself should determine what to do when it encounters a stop
- * character string. The logic of reading a corpus shouldn't be in the Parser.
- * The Parser just returns chunks of whitespace delimited words or words 
- * delimited by some stop character. This will alow us to more easily extend
- * reading in punctuation into the corpus while keeping `start->stop' sentences
- * clearly defined.
+ * The easiest way to handle this is to set only the stop character for \n and
+ * let the 'word' be anything including punction. E.g. a word can be 'and',
+ * 'Mrs.', 'Long', 'here,' and 'immediately;'.
+ *
+ * This means the Markov Chain will take the form of the text it's given in a
+ * literal sense (the actually look of the text) and in the sense of word
+ * choice and placement inside a sentence.
+ *
+ *  Any more advanced and we must get into NLP/full-blown parser.
  */
 class Parser {
 public:
@@ -190,11 +189,62 @@ protected:
 	std::vector<std::string> delta_lookup;
 };
 
+class MarkovChain {
+public:
+    MarkovChain ()
+        : generator(NULL)
+        , dictionary(NULL)
+    { }
+
+    MarkovChain (std::mt19937 *gen, std::unordered_map<std::string, Word> *dict)
+        : generator(gen)
+        , dictionary(dict)
+    { }
+
+    bool
+    done ()
+    {
+        return (current_word == std::string(1, STOP_CHAR));
+    }
+
+    std::string
+    current ()
+    {
+        return current_word;
+    }
+
+    /*
+     * Return the next word from the current.
+     */
+    std::string
+    next ()
+    {
+        std::string key = current_word;
+
+        if (!(dictionary || generator)) {
+            std::cerr << "Invalid Markov Chain invoked!" << std::endl;
+            exit(1);
+        }
+
+        if (key.empty()) {
+            /* "STOP_CHAR" is the key to the starting word (or empty string) */
+            key = std::string(1, STOP_CHAR);
+        }
+
+        current_word = (*dictionary)[key].next(*generator);
+        return current_word;
+    }
+
+protected:
+    std::mt19937 *generator;
+    std::string current_word; /* used as a key into dictionary */
+    std::unordered_map<std::string, Word> *dictionary;
+};
+
 class Corpus {
 public:
     Corpus ()
         : not_built(true)
-        , current_word(std::string())
     {
         /*
          * A ridiculous incantation which basically just gets 1024 random bytes
@@ -265,7 +315,6 @@ public:
             if (p.done())
                 next = stop_string;
 
-            //printf("->'%s' -> '%s'\n", curr.c_str(), next.c_str());
             add_pair(curr, next);
             
             /* 
@@ -286,29 +335,14 @@ public:
         not_built = false;
     }
 
-    std::string
-    current ()
+    MarkovChain
+    chain ()
     {
-        check_build();
-        return current_word;
-    }
-
-    /*
-     * Return the next word from the current.
-     */
-    std::string
-    next ()
-    {
-        std::string key;
-        check_build();
-
-        key = current_word;
-        if (key.empty()) {
-            key = std::string(1, STOP_CHAR);
+        if (not_built) {
+            std::cerr << "Need to build Corpus before using it." << std::endl;
+            exit(1);
         }
-
-        current_word = dictionary[key].next(generator);
-        return current_word;
+        return MarkovChain(&generator, &dictionary);
     }
 
 protected:
@@ -324,28 +358,20 @@ protected:
         dictionary[curr].update_transition(next);
     }
 
-    void
-    check_build ()
-    {
-        if (not_built) {
-            std::cerr << "Need to build Corpus before using it." << std::endl;
-            exit(1);
-        }
-    }
-
     std::mt19937 generator;
     bool not_built;
-    std::string current_word; /* used as a key into dictionary */
     std::unordered_map<std::string, Word> dictionary;
 };
 
 int
 main (int argc, char **argv)
 {
+    MarkovChain chain;
     Corpus corpus;
     corpus.build("sample.txt");
-    for (int i = 0; i < 20; i++) {
-        printf("%s\n", corpus.next().c_str());
+    chain = corpus.chain();
+    while (!chain.done()) {
+        printf("%s ", chain.next().c_str());
     }
     return 0;
 }
