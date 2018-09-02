@@ -11,21 +11,6 @@
 
 #define STOP_CHAR '\n'
 
-/*
- * Several problems with the parser:
- *  - how to handle context specific 'stop_chars'? For example, in a quotation
- *  how to we handle a period showing up? How to handle 'Mrs. Long'?
- *
- * The easiest way to handle this is to set only the stop character for \n and
- * let the 'word' be anything including punction. E.g. a word can be 'and',
- * 'Mrs.', 'Long', 'here,' and 'immediately;'.
- *
- * This means the Markov Chain will take the form of the text it's given in a
- * literal sense (the actually look of the text) and in the sense of word
- * choice and placement inside a sentence.
- *
- *  Any more advanced and we must get into NLP/full-blown parser.
- */
 class Parser {
 public:
     Parser (std::stringstream &stream)
@@ -155,7 +140,7 @@ public:
     string ()
     {
         if (word_string == std::string()) {
-            std::cerr << "Word has no string value!" << std::endl;
+            fprintf(stderr, "Word has has not string value!\n");
             exit(1);
         }
         return word_string;
@@ -368,10 +353,20 @@ main (int argc, char **argv)
 {
     MarkovChain chain;
     Corpus corpus;
-    corpus.build("sample.txt");
-    chain = corpus.chain();
-    while (!chain.done()) {
-        printf("%s ", chain.next().c_str());
+
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <corpus-file>\n", argv[0]);
+        exit(1);
     }
+
+    corpus.build(argv[1]);
+    chain = corpus.chain();
+    while (1) {
+        printf("%s", chain.next().c_str());
+        if (chain.done())
+            break;
+        putchar(' ');
+    }
+
     return 0;
 }

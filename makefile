@@ -1,2 +1,2 @@
 all:
-	g++ --std=c++11 -o test Markov.cpp
+	g++ -Wall -pedantic -o markov Markov.cpp
