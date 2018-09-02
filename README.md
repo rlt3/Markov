@@ -1,14 +1,15 @@
 # Markov Chain Text Generator
 
-This is small program which reads a corpus file of examples. Then a [Markov
+This is a small program which compiles a corpus of text then randomly generates
+a string of text based on that corpus. Internally, a [Markov
 Chain](https://en.wikipedia.org/wiki/Markov_chain) is built using that corpus to
 produce text that is structured similarly.  If the corpus file is large enough,
 the text that is produced might even be comphrensible a lot of the time.
 
 ## How do I use it?
 
-Simply clone this repo and compile it by running `make` which will produce a
-`markov` executable. Then run the program by giving it a corpus file.
+Simply clone this repo and compile it by running `make` which will produce an
+executable named `markov`. Then run the program by giving it a corpus file.
 
 One thing that needs to be known about the corpus file structure is that the
 program doesn't have any idea about sentence structure, e.g. it doesn't treat
