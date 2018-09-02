@@ -21,5 +21,6 @@ English sentences.
 I have added the first chapter of Pride and Prejudice (from the incredible
 [Project Gutenberg](https://www.gutenberg.org/)) to the repo under the name
 `sample.txt`. Here's some example output using that sample corpus:
-    $ ./markov sample.txt
-    “Do you will be sure! A single man of them, Mr. Bennet made no compassion for my share of them, Mr. Bennet was less difficult to hearing it.” 
+
+     $ ./markov sample.txt
+     “Do you will be sure! A single man of them, Mr. Bennet made no compassion for my share of them, Mr. Bennet was less difficult to hearing it.” 
